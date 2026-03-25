@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rune Translator & Numerical value</title>
+    <style>
+        .red-text {color: red;}
+        * {font-size: 100%;}
+        body {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        .section {
+            margin: 15px 0;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+            font-size: 80%;
+        }
+        th {
+            background-color: #ddd;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .unknown-char {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Rune Translator & Numerical value</h1>
+    <textarea id="runetext" rows="2" cols="70"></textarea>
+    <br>
+    <button onclick="berekenNumeriekeWaarde()">Translate & Calculate numerical value</button>
+    <br>
+    <span>Examples: </span>
+    <button onclick="setVoorbeeld('ᚨᛚᚢ')">Alu</button>
+    <button onclick="setVoorbeeld('ᛏᚢᚹᚨᛏᚢᚹᚨ')">tuwatuwa (Vadstena_bracteate_inscription)</button>
+    <button onclick="setVoorbeeld('ek e=rila=z asugisalas m=uh=a h=aite g=ag=ag=a ginu g=ah=e … lija … hagala wiju big')">Kragehul_I_inscription</button>
+
+    <div id="result"></div>
+    <div id="translation"></div>
+    <div id="unknown-chars"></div>
+    <div id="numerical-values"></div>
+    <div id="bindrunes"></div>
+    <div id="recorded-chars"></div>
+
+    <script>
+        // Centrale definitie van rune-mappings
+        const RUNE_MAPPINGS = {
+            'f': {runes: ['ᚠ'], value: 1},
+            'u': {runes: ['ᚢ'], value: 2},
+            'th': {runes: ['þ', 'ᚦ'], value: 3},
+            'a': {runes: ['ᚨ', 'ᚬ', 'ᚭ'], value: 4},
+            'r': {runes: ['ᚱ'], value: 5},
+            'k': {runes: ['ᚴ', 'ᚲ'], value: 6},
+            'g': {runes: ['ᚷ'], value: 7},
+            'w': {runes: ['ᚹ'], value: 8},
+            'h': {runes: ['ᚺ', 'ᚻ', 'ᚼ', 'ᚽ'], value: 9},
+            'n': {runes: ['ᚾ', 'ᚿ'], value: 10},
+            'i': {runes: ['ᛁ'], value: 11},
+            'j': {runes: ['ᛃ'], value: 12},
+            'ae': {runes: ['ï', 'æ', 'ᛇ', 'ᛅ', 'ᛆ'], value: 13},
+            'p': {runes: ['ᛈ'], value: 14},
+            'z': {runes: ['ᛉ'], value: 15},
+            's': {runes: ['ᛋ', 'ᛊ', 'ᛌ'], value: 16},
+            't': {runes: ['ᛏ', 'ᛐ'], value: 17},
+            'b': {runes: ['ᛒ', 'ᛓ'], value: 18},
+            'e': {runes: ['ᛖ', 'ᛂ'], value: 19},
+            'm': {runes: ['ᛗ', 'ᛘ', 'ᛙ'], value: 20},
+            'l': {runes: ['ᛚ'], value: 21},
+            'ing': {runes: ['ᛜ', 'ŋ'], value: 22},
+            'o': {runes: ['ᛟ'], value: 23},
+            'd': {runes: ['ᛞ'], value: 24}
+        };
+
+        // Genereer futhark-varianten
+        function generateFuthark(type) {
+            const futhark = {};
+            const runeToLatin = {};
+            
+            for (const [latin, data] of Object.entries(RUNE_MAPPINGS)) {
+                let value = data.value;
+                
+                // Bereken de waarde voor verschillende varianten
+                if (type === 'younger_uthark' || type === 'elder_uthark') {
+                    // Uthark: verschuif alle waarden -1, f wordt 24
+                    if (latin === 'f') {
+                        value = 24;
+                    } else {
+                        value = data.value - 1;
+                    }
+                } else if (type === 'younger_futhark') {
+                    // Younger futhark: o en d wisselen van plaats
+                    if (latin === 'o') {
+                        value = 24;
+                    } else if (latin === 'd') {
+                        value = 23;
+                    }
+                }
+                
+                // Voeg Latijnse karakters toe
+                futhark[latin] = value;
+                
+                // Voeg runen toe
+                for (const rune of data.runes) {
+                    futhark[rune] = value;
+                    runeToLatin[rune] = latin;
+                }
+            }
+            
+            return {futhark, runeToLatin};
+        }
+
+        // Genereer alle varianten
+        const variants = {
+            younger_futhark: generateFuthark('younger_futhark'),
+            younger_uthark: generateFuthark('younger_uthark'),
+            elder_futhark: generateFuthark('elder_futhark'),
+            elder_uthark: generateFuthark('elder_uthark')
+        };
+
+        // Translatie functie
+        function translateRunesToLatin(text, nietGekendInBib) {
+            let result = '';
+            let index = 0;
+            const runeToLatin = variants.younger_futhark.runeToLatin;
+            
+            while (index < text.length) {
+                let found = false;
+                
+                // Probeer eerst 3-karakter combinaties (ing)
+                if (index + 3 <= text.length) {
+                    const threeChar = text.slice(index, index + 3);
+                    if (threeChar in variants.younger_futhark.futhark) {
+                        result += threeChar;
+                        index += 3;
+                        found = true;
+                        continue;
+                    }
+                }
+                
+                // Probeer 2-karakter combinaties (th, ae)
+                if (index + 2 <= text.length) {
+                    const twoChar = text.slice(index, index + 2);
+                    if (twoChar in variants.younger_futhark.futhark) {
+                        result += twoChar;
+                        index += 2;
+                        found = true;
+                        continue;
+                    }
+                }
+                
+                // Enkel karakter
+                const char = text[index];
+                if (char in runeToLatin) {
+                    result += runeToLatin[char];
+                } else if (char in variants.younger_futhark.futhark) {
+                    result += char;
+                } else {
+                    // Onbekend karakter in rood
+                    if (char !== ' ' && char !== '=' && char !== '…') {
+                        result += `<span class="unknown-char">${char}</span>`;
+                    } else {
+                        result += char;
+                    }
+                }
+                index++;
+            }
+            
+            return result;
+        }
+
+        function berekenNumeriekeWaarde() {
+            const runetext = document.getElementById("runetext").value.toLowerCase();
+            
+            const totaleWaardes = {
+                'younger_futhark': 0,
+                'younger_uthark': 0,
+                'elder_futhark': 0,
+                'elder_uthark': 0
+            };
+            
+            let bindrune = 0;
+            let index = 0;
+            const nietGekendInBib = new Set();
+            const recordedChars = new Map();
+
+            while (index < runetext.length) {
+                if (runetext[index] === '=') {
+                    bindrune++;
+                    index++;
+                    continue;
+                }
+
+                let found = false;
+                
+                // Probeer 3-karakter combinaties (ing)
+                if (index + 3 <= runetext.length) {
+                    const threeChar = runetext.slice(index, index + 3);
+                    if (threeChar in variants.younger_futhark.futhark) {
+                        for (const [variant, data] of Object.entries(variants)) {
+                            totaleWaardes[variant] += data.futhark[threeChar];
+                        }
+                        recordedChars.set(threeChar, (recordedChars.get(threeChar) || 0) + 1);
+                        index += 3;
+                        found = true;
+                        continue;
+                    }
+                }
+
+                // Probeer 2-karakter combinaties (th, ae)
+                if (index + 2 <= runetext.length) {
+                    const twoChar = runetext.slice(index, index + 2);
+                    if (twoChar in variants.younger_futhark.futhark) {
+                        for (const [variant, data] of Object.entries(variants)) {
+                            totaleWaardes[variant] += data.futhark[twoChar];
+                        }
+                        recordedChars.set(twoChar, (recordedChars.get(twoChar) || 0) + 1);
+                        index += 2;
+                        found = true;
+                        continue;
+                    }
+                }
+
+                // Enkel karakter
+                const char = runetext[index];
+                if (char in variants.younger_futhark.futhark) {
+                    for (const [variant, data] of Object.entries(variants)) {
+                        totaleWaardes[variant] += data.futhark[char];
+                    }
+                    recordedChars.set(char, (recordedChars.get(char) || 0) + 1);
+                    found = true;
+                } else if (char !== ' ' && char !== '…') {
+                    nietGekendInBib.add(char);
+                }
+                
+                index++;
+            }
+
+            // Resultaten weergeven
+            displayResults(runetext, totaleWaardes, bindrune, recordedChars, nietGekendInBib);
+        }
+
+        function deelbaarDoor(getal) {
+            const delers = [2, 3, 9, 11, 18, 19, 24, 54, 216];
+            return delers.filter(deler => getal % deler === 0);
+        }
+
+        function displayResults(runetext, totaleWaardes, bindrune, recordedChars, nietGekendInBib) {
+            // Clear all containers
+            document.getElementById("result").innerHTML = '';
+            document.getElementById("translation").innerHTML = '';
+            document.getElementById("unknown-chars").innerHTML = '';
+            document.getElementById("numerical-values").innerHTML = '';
+            document.getElementById("bindrunes").innerHTML = '';
+            document.getElementById("recorded-chars").innerHTML = '';
+
+            // Translatie
+            const translatie = translateRunesToLatin(runetext, nietGekendInBib);
+            if (translatie !== runetext) {
+                document.getElementById("translation").innerHTML = 
+                    `<div class="section"><strong>Translation:</strong> ${translatie}</div>`;
+            }
+
+            // Onbekende karakters (direct onder Translation)
+            if (nietGekendInBib.size !== 0) {
+                const stringNietGekend = Array.from(nietGekendInBib).join(' ');
+                document.getElementById("unknown-chars").innerHTML = 
+                    `<div class="section"><strong>Characters not found in library:</strong> <span class="unknown-char">${stringNietGekend}</span></div>`;
+            }
+
+            // Numerieke waarden in tabel
+            let numericalHtml = '<div class="section"><strong>Numerical values:</strong>';
+            numericalHtml += '<table>';
+            numericalHtml += '<tr><th>Variant</th><th>Value</th><th>Divisible by</th></tr>';
+            for (const [key, value] of Object.entries(totaleWaardes)) {
+                if (value !== 0) {
+                    const deelbaarResult = deelbaarDoor(value);
+                    let deelbaarString = deelbaarResult.join(', ');
+
+                    if (deelbaarResult.includes(24)) {
+                        deelbaarString = deelbaarString.replace(/24/g, '<span class="red-text">24</span>');
+                    }
+                    if (deelbaarResult.includes(54)) {
+                        deelbaarString = deelbaarString.replace(/54/g, '<span class="red-text">54</span>');
+                    }
+
+                    numericalHtml += '<tr>';
+                    numericalHtml += `<td>${key}</td>`;
+                    numericalHtml += `<td><strong>${value}</strong></td>`;
+                    numericalHtml += `<td>${deelbaarString || '-'}</td>`;
+                    numericalHtml += '</tr>';
+                }
+            }
+            numericalHtml += '</table></div>';
+            document.getElementById("numerical-values").innerHTML = numericalHtml;
+
+            // Bindrunes
+            if (bindrune !== 0) {
+                document.getElementById("bindrunes").innerHTML = 
+                    `<div class="section"><strong>Amount of bindrunes:</strong> ${bindrune}</div>`;
+            }
+
+            // Recorded characters in tabel
+            if (recordedChars.size > 0) {
+                let recordedHtml = '<div class="section"><strong>Recorded characters:</strong>';
+                recordedHtml += '<table>';
+                recordedHtml += '<tr><th>Character</th><th>Count</th><th>YF</th><th>YU</th><th>EF</th><th>EU</th></tr>';
+                for (const [key, count] of recordedChars.entries()) {
+                    const yf = variants.younger_futhark.futhark[key];
+                    const yu = variants.younger_uthark.futhark[key];
+                    const ef = variants.elder_futhark.futhark[key];
+                    const eu = variants.elder_uthark.futhark[key];
+                    recordedHtml += '<tr>';
+                    recordedHtml += `<td>${key}</td>`;
+                    recordedHtml += `<td>${count}</td>`;
+                    recordedHtml += `<td>${yf}</td>`;
+                    recordedHtml += `<td>${yu}</td>`;
+                    recordedHtml += `<td>${ef}</td>`;
+                    recordedHtml += `<td>${eu}</td>`;
+                    recordedHtml += '</tr>';
+                }
+                recordedHtml += '</table></div>';
+                document.getElementById("recorded-chars").innerHTML = recordedHtml;
+            }
+        }
+
+        function setVoorbeeld(voorbeeld) {
+            document.getElementById("runetext").value = voorbeeld;
+        }
+    </script>
+</body>
+</html>
